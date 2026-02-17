@@ -513,6 +513,8 @@ def nonTerminalImpl : Macro := fun
       Syntax.mkSymbolEmbed base,
       Syntax.mkSymbolEmbed var
     ] ++ (level[1]?.map TSyntax.mk).toArray
+  | .node _ ``Lott.symbolEmbed #[.atom _ "[[", .node _ `choice cs, .atom _ "]]"] =>
+    return mkNode choiceKind <| cs.map (Syntax.mkSymbolEmbed ·)
   | _ => Macro.throwUnsupported
 
 private
