@@ -830,8 +830,8 @@ def elabNonTerminals (nts : Array Syntax) : CommandElabM Unit := do
           private
           def $parserIdent : TrailingParser :=
             trailingNode $(quote <| ← nt.catName) Parser.maxPrec 0 <|
-              "[" >> categoryParser $(quote <| symbolPrefix ++ valName) 0 >> " / " >>
-                categoryParser $(quote <| symbolPrefix ++ varName) 0 >> "]")
+              "[" >> categoryParser' $(quote <| symbolPrefix ++ valName) 0 >> " / " >>
+                categoryParser' $(quote <| symbolPrefix ++ varName) 0 >> "]")
 
       -- Also add open parsers for this variable if it's locally nameless.
       if !(← isLocallyNameless varName) then
@@ -843,10 +843,10 @@ def elabNonTerminals (nts : Array Syntax) : CommandElabM Unit := do
           private
           def $parserIdent : TrailingParser :=
             trailingNode $(quote <| ← nt.catName) Parser.maxPrec 0 <|
-              checkNoWsBefore >> "^" >> categoryParser $(quote <| symbolPrefix ++ varName) 0 >>
+              checkNoWsBefore >> "^" >> categoryParser' $(quote <| symbolPrefix ++ varName) 0 >>
                 Parser.optional (checkNoWsBefore >> "#" >> checkLineEq >> Parser.numLit) >>
                 Parser.optional (checkNoWsBefore >> "/" >> checkLineEq >>
-                  categoryParser $(quote <| symbolPrefix ++ varName) 0))
+                  categoryParser' $(quote <| symbolPrefix ++ varName) 0))
 
       let parserIdent := mkIdent <| canonName ++ valName.appendAfter "_open_parser"
       elabCommand <| ←
@@ -854,10 +854,10 @@ def elabNonTerminals (nts : Array Syntax) : CommandElabM Unit := do
           private
           def $parserIdent : TrailingParser :=
             trailingNode $(quote <| ← nt.catName) Parser.maxPrec 0 <|
-              checkNoWsBefore >> "^^" >> categoryParser $(quote <| symbolPrefix ++ valName) 0 >>
+              checkNoWsBefore >> "^^" >> categoryParser' $(quote <| symbolPrefix ++ valName) 0 >>
                 Parser.optional (checkNoWsBefore >> "#" >> checkLineEq >> Parser.numLit) >>
                 Parser.optional (checkNoWsBefore >> "/" >> checkLineEq >>
-                  categoryParser $(quote <| symbolPrefix ++ varName) 0))
+                  categoryParser' $(quote <| symbolPrefix ++ varName) 0))
 
       let parserIdent := mkIdent <| canonName ++ varName.appendAfter "_close_parser"
       elabCommand <| ←
@@ -865,9 +865,9 @@ def elabNonTerminals (nts : Array Syntax) : CommandElabM Unit := do
           private
           def $parserIdent : Parser :=
             leadingNode $(quote <| ← nt.catName) Parser.maxPrec <|
-              "\\" >> categoryParser $(quote <| symbolPrefix ++ varName) 0 >>
+              "\\" >> categoryParser' $(quote <| symbolPrefix ++ varName) 0 >>
                 Parser.optional (checkNoWsBefore >> "#" >> checkLineEq >> Parser.numLit) >>
-                "^" >> categoryParser $(quote <| ← nt.catName) 0)
+                "^" >> categoryParser' $(quote <| ← nt.catName) 0)
 
     -- Define variable parsers, plus variable category parser in symbol category.
     let varAttrIdent := mkIdent <| ← nt.varParserAttrName
@@ -895,7 +895,7 @@ def elabNonTerminals (nts : Array Syntax) : CommandElabM Unit := do
         private
         def $varParserIdent : Parser :=
           leadingNode $(quote <| ← nt.catName) Parser.maxPrec <|
-            categoryParser $(quote <| ← nt.varCatName) Parser.maxPrec)
+            categoryParser' $(quote <| ← nt.varCatName) Parser.maxPrec)
 
     -- Define parser in parent.
     if let some parent := parent? then
@@ -909,7 +909,7 @@ def elabNonTerminals (nts : Array Syntax) : CommandElabM Unit := do
           private
           def $parentParserIdent : Parser :=
             leadingNode $(quote parentParserCatName) Parser.maxPrec <|
-              categoryParser $(quote <| ← nt.catName) 0)
+              categoryParser' $(quote <| ← nt.catName) 0)
 
     -- Define macros and tex elaborations.
     let catName ← nt.catName

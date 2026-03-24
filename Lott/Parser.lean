@@ -1,5 +1,6 @@
 import Lean.Elab
 import Lean.Parser
+import Lott.Data.String
 
 namespace Lott
 
@@ -159,6 +160,42 @@ def parserOfStack.parenthesizer (offset : Nat) (_prec : Nat := 0) : Parenthesize
 
 def qualifiedSymbolParser := leadingNode `Lott.QualifiedSymbol Parser.maxPrec <|
   ident >> "| " >> incQuotDepth (parserOfStack 1)
+
+def escapeKeyword := "lean%"
+
+def escapeParser (catName : Name) : Parser :=
+  leadingNode catName Parser.maxPrec <|
+    "[[" >> checkLineEq >> symbol escapeKeyword >> checkLineEq >> termParser >> checkLineEq >> "]]"
+
+def rawTypeFieldCat := `Lott.RawTypeField
+
+partial
+def getEscapeTerm? : Syntax → Option Syntax
+  | .node _ _ #[.atom _ kw, term] =>
+    if kw == escapeKeyword then some term else none
+  | .node _ _ #[.atom _ "[[", .atom _ kw, term, .atom _ "]]"] =>
+    if kw == escapeKeyword then some term else none
+  | .node _ `choice choices => choices.findSome? getEscapeTerm?
+  | _ => none
+
+def mkEscapeSyntax (catName : Name) (term : Syntax) : Syntax :=
+  mkNode catName #[mkAtom "[[", mkAtom escapeKeyword, term, mkAtom "]]"]
+
+def escapeTex? : Syntax → Option String :=
+  getEscapeTerm? >=> fun term =>
+    let termTex := match term.getSubstring? (withLeading := false) (withTrailing := false) with
+      | some raw => raw.toString.texEscape
+      | none => "..."
+    some <| "\\texttt{" ++ escapeKeyword.texEscape ++ " " ++ termTex ++ "}"
+
+@[run_parser_attribute_hooks]
+def rawTypeFieldParser : Parser := escapeParser rawTypeFieldCat
+@[run_parser_attribute_hooks]
+def categoryParser' (catName : Name) (prec : Nat := 0) : Parser :=
+  if (`Lott.Symbol).isPrefixOf catName then
+    escapeParser catName <|> categoryParser catName prec
+  else
+    categoryParser catName prec
 
 @[term_parser]
 def qualifiedSymbolEmbed := leading_parser

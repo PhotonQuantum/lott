@@ -244,6 +244,8 @@ def texElabVariable : TexElab := fun
 partial
 def texElabSymbolOrJudgement (catName : Name) (profile : Name) (ref stx : Syntax)
   : TermElabM String := do
+  if let some tex := escapeTex? stx then
+    return tex
   let env ← getEnv
   let texPrePost? := do
     let qualified ← catName.erasePrefix? symbolPrefix
@@ -378,6 +380,8 @@ def _root_.Lott.IR.toMacroSeqItems (ir : Array IR) (canon : Name) (ids binders :
 
       `(doSeqItem| let $l := Lott.Syntax.mkSymbolEmbed $l)
     | mk _ (.atom _) => return none
+    | mk l (.rawType _) =>
+      `(doSeqItem| let $l := Lott.Syntax.mkSymbolEmbed $l)
     | mk l (.sepBy ir sep) => do
       let catName := sepByPrefix ++ (← getCurrNamespace) ++ canon ++ l.getId |>.obfuscateMacroScopes
       let patternArgs ← IR.toPatternArgs ir
@@ -596,6 +600,8 @@ def toExampleSyntax (ir : Array IR) (canonQualified profile : Name) (enclosingSe
           (mkNode (variablePrefix ++ n) #[·, mkAtom "@", mkIdent <| .str .anonymous ·])
       ]
     | .atom s => return if s == "" then none else mkAtom s.trim
+    | .rawType _ =>
+      return some <| mkEscapeSyntax rawTypeFieldCat (mkIdent `t)
     | .sepBy ir _ => do
       let catName := sepByPrefix ++ canonQualified ++ l.getId |>.obfuscateMacroScopes
       let some patString := sepByIdxStrings[enclosingSepBys]?

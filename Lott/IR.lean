@@ -56,7 +56,7 @@ mutual
 
 private partial
 def toParser' (canon : Name) : IR → CommandElabM (Option Term)
-  | mk _ (.category n) => ``(categoryParser $(quote <| symbolPrefix ++ n) Parser.maxPrec)
+  | mk _ (.category n) => ``(categoryParser' $(quote <| symbolPrefix ++ n) Parser.maxPrec)
   | mk _ (.atom s) => if s == "" then return none else ``(symbol $(mkStrLit s))
   | mk l (.sepBy ir sep) => do
     let canon' := canon ++ l.getId |>.obfuscateMacroScopes
