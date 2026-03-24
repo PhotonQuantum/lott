@@ -347,9 +347,22 @@ def _root_.Lott.IR.ofStx (stx : TSyntax `stx) (l? : Option Ident := none) : Comm
   | _ => throwUnsupportedSyntax
 
 partial
-def _root_.Lott.IR.ofProdArg (arg : TSyntax ``Lott.prodArg) : CommandElabM IR := do
-  let `(prodArg| $[$l?:ident:]?$stx:stx) := arg | throwUnsupportedSyntax
-  ofStx stx l?
+def _root_.Lott.IR.ofProdArg (arg : Syntax) : CommandElabM IR := do
+  match arg with
+  | `(prodArg| $[$l?:ident:]?$stx:stx) =>
+    match stx.raw with
+    | .node _ `Lott.rawTypeProdArgBody #[
+        .node _ `Lott.RawTypeProdArg #[
+          .atom _ "type(",
+          t,
+          .atom _ ")"
+        ]
+      ] =>
+      pure <| .mk (l?.getD <| ← mkFreshIdent arg) <| .rawType (.mk t)
+    | .node _ `Lott.RawTypeProdArg #[.atom _ "type(", t, .atom _ ")"] =>
+      pure <| .mk (l?.getD <| ← mkFreshIdent arg) <| .rawType (.mk t)
+    | _ => ofStx stx l?
+  | _ => throwUnsupportedSyntax
 
 partial
 def _root_.Lott.IR.toExprArgs (ir : Array IR) (ids binders : Array Name)
@@ -474,6 +487,8 @@ def _root_.Lott.IR.toTexSeqItems (ir : Array IR) (canon : Name)
         let $l ← Lott.texElabSymbolOrJudgement $(quote <| symbolPrefix ++ n) profile ref $l)
     | mk l (.atom s) =>
       `(doSeqItem| let $l := $(quote <| atomToTex s))
+    | mk l (.rawType _) =>
+      `(doSeqItem| let $l ← Lott.texElabSymbolOrJudgement $(quote rawTypeFieldCat) profile ref $l)
     | mk l (.sepBy ir sep) => do
       let catName := sepByPrefix ++ (← getCurrNamespace) ++ canon ++ l.getId |>.obfuscateMacroScopes
       let patternArgs ← IR.toPatternArgs ir

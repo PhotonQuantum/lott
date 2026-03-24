@@ -33,6 +33,7 @@ private
 inductive IRType where
   | category (n : Name)
   | atom (s : String)
+  | rawType (t : Term)
   | sepBy (ir : Array IR) (sep : String)
   | optional (ir : Array IR)
 deriving Inhabited, BEq
@@ -58,6 +59,7 @@ private partial
 def toParser' (canon : Name) : IR → CommandElabM (Option Term)
   | mk _ (.category n) => ``(categoryParser' $(quote <| symbolPrefix ++ n) Parser.maxPrec)
   | mk _ (.atom s) => if s == "" then return none else ``(symbol $(mkStrLit s))
+  | mk _ (.rawType _) => ``(rawTypeFieldParser)
   | mk l (.sepBy ir sep) => do
     let canon' := canon ++ l.getId |>.obfuscateMacroScopes
     let catName := sepByPrefix ++ (← getCurrNamespace) ++ canon'
@@ -162,6 +164,7 @@ def toType (ids binders : Array Name) : IR → CommandElabM (Option Term)
         return some <| mkIdent <| n.appendAfter "Id"
     return some <| mkIdent n
   | IR.mk _ (.atom _) => return none
+  | IR.mk _ (.rawType t) => return some t
   | IR.mk _ (.sepBy ir _) => do
     let some type' ← toTypeProdSeq ids binders ir | return none
     ``(List $type')
@@ -186,6 +189,7 @@ private
 def toPatternArg : IR → CommandElabM (Option Term)
   | mk l (.category n) => `($l@(Lean.Syntax.node _ $(quote <| symbolPrefix ++ n) _))
   | mk l (.atom s) => if s == "" then return none else `($l@(Lean.Syntax.atom _ $(quote s.trim)))
+  | mk l (.rawType _) => `($l@(Lean.Syntax.node _ $(quote rawTypeFieldCat) _))
   | mk l (.sepBy ..) => `($l@(Lean.Syntax.node _ `null _))
   | mk l (.optional ..) => `($l@(Lean.Syntax.node _ `null _))
 

@@ -58,6 +58,10 @@ where
         throwErrorAt prodIdent "mismatched atoms \"{s}\" and \"{sp}\""
 
       go irs' patAcc propAcc
+    | .rawType t, .rawType tp => do
+      if t != tp then
+        throwErrorAt prodIdent "mismatched raw field types"
+      go irs' (patAcc.push hole) propAcc
     | .sepBy ir sep, .sepBy pir psep => do
       if sep != psep then
         throwErrorAt prodIdent "mismatched separators \"{sep}\" and \"{psep}\""
@@ -131,6 +135,7 @@ where
           return (l, some <| ← ``($freeId $l))
       return (← ``(_), none)
     | .atom _ => return (none, none)
+    | .rawType _ => return (← ``(_), none)
     | .sepBy ir _ => match ← goMany ir with
       | (#[], _) => return (none, none)
       | (_, #[]) => return (← ``(_), none)
@@ -163,6 +168,7 @@ def containsVar (varName : Name) (ir : Array IR) (ids binders : Array Name) : Bo
   ir.any fun
     | mk l (.category n) => n == varName && !(binders.contains l.getId || ids.contains l.getId)
     | mk _ (.atom _) => false
+    | mk _ (.rawType _) => false
     | mk _ (.sepBy ir _)
     | mk _ (.optional ir) => containsVar varName ir ids binders
 
@@ -192,6 +198,7 @@ where
   fullProdId := mkIdent <| qualified ++ prodId.getId
   inc := ir.any fun
     | mk l (.category n) => n == subst.fst && binders.contains l.getId
+    | mk _ (.rawType _) => false
     | _ => false
   go (irs : Array IR) (patAcc : TSyntaxArray ``Lean.binderIdent := #[]) (propAcc : Array Term := #[])
     : CommandElabM (TSyntaxArray ``Lean.binderIdent × Array Term) := do
@@ -219,6 +226,7 @@ where
       else
         go irs (patAcc.push hole) propAcc
     | .atom _ => go irs patAcc propAcc
+    | .rawType _ => go irs (patAcc.push hole) propAcc
     | .sepBy ir _
     | .optional ir => do
       match ← go ir with
@@ -254,6 +262,7 @@ def toSubstPatternAndArgs (ir : Array IR) (varType valType : Name) (varId valId 
 
       return some (l, l, false)
     | .atom _ => return none
+    | .rawType _ => return some (l, l, false)
     | .sepBy ir _ =>
       let some (pattern, args) ←
         toSubstPatternAndArgs ir varType valType varId valId bindOf? binderId? |
@@ -297,6 +306,7 @@ def toVarOpenPatternAndArgs (ir : Array IR) (varType valType : Name) (varId idxI
 
       return some (l, l, false)
     | .atom _ => return none
+    | .rawType _ => return some (l, l, false)
     | .sepBy ir _ =>
       let some (pattern, args) ←
         toVarOpenPatternAndArgs ir varType valType varId idxId bindOf? binderId? |
@@ -333,6 +343,7 @@ def toValOpenPatternAndArgs (ir : Array IR) (varType valType : Name) (valId idxI
 
       return some (l, l, false)
     | .atom _ => return none
+    | .rawType _ => return some (l, l, false)
     | .sepBy ir _ =>
       let some (pattern, args) ←
         toValOpenPatternAndArgs ir varType valType valId idxId bindOf? binderId? |
@@ -376,6 +387,7 @@ def toClosePatternAndArgs (ir : Array IR) (varType valType : Name) (varId idxId 
 
       return some (l, l, false)
     | .atom _ => return none
+    | .rawType _ => return some (l, l, false)
     | .sepBy ir _ =>
       let some (pattern, args) ←
         toClosePatternAndArgs ir varType valType varId idxId bindOf? binderId? |
@@ -602,6 +614,7 @@ where
   irClosure : IR → NameSet
     | .mk _ (.category n) => .empty |>.insert n
     | .mk _ (.atom _) => .empty
+    | .mk _ (.rawType _) => .empty
     | .mk _ (.sepBy ir _)
     | .mk _ (.optional ir) => irsClosure ir
   irsClosure ir := ir.foldl (·.union <| irClosure ·) .empty
@@ -633,6 +646,7 @@ where
   irClosure : IR → NameSet
     | .mk _ (.category n) => .empty |>.insert n
     | .mk _ (.atom _) => .empty
+    | .mk _ (.rawType _) => .empty
     | .mk _ (.sepBy ir _)
     | .mk _ (.optional ir) => irsClosure ir
   irsClosure ir := ir.foldl (·.union <| irClosure ·) .empty
@@ -1015,6 +1029,10 @@ def elabNonTerminals (nts : Array Syntax) : CommandElabM Unit := do
                   throwErrorAt ref "atoms shouldn't be referenced by binders"
 
                 return none
+              | .rawType _ =>
+                if let some ref := bindConfig.find? l.getId then
+                  throwErrorAt ref "raw type fields shouldn't be referenced by binders"
+                return none
               | .sepBy ..
               | .optional _ =>
                 throwError "bind configuration for productions with sepBy or optional syntax are not supported"
@@ -1060,6 +1078,10 @@ def elabNonTerminals (nts : Array Syntax) : CommandElabM Unit := do
                   throwErrorAt ref "atoms shouldn't be referenced by binders"
 
                 return none
+              | .rawType _ =>
+                if let some ref := bindConfig.find? l.getId then
+                  throwErrorAt ref "raw type fields shouldn't be referenced by binders"
+                return none
               | .sepBy ..
               | .optional _ =>
                 throwError "bind configuration for productions with sepBy or optional syntax are not supported"
@@ -1098,6 +1120,10 @@ def elabNonTerminals (nts : Array Syntax) : CommandElabM Unit := do
                 if let some ref := bindConfig.find? l.getId then
                   throwErrorAt ref "atoms shouldn't be referenced by binders"
 
+                return none
+              | .rawType _ =>
+                if let some ref := bindConfig.find? l.getId then
+                  throwErrorAt ref "raw type fields shouldn't be referenced by binders"
                 return none
               | .sepBy ..
               | .optional _ =>
@@ -1141,6 +1167,10 @@ def elabNonTerminals (nts : Array Syntax) : CommandElabM Unit := do
                 if let some ref := bindConfig.find? l.getId then
                   throwErrorAt ref "atoms shouldn't be referenced by binders"
 
+                return none
+              | .rawType _ =>
+                if let some ref := bindConfig.find? l.getId then
+                  throwErrorAt ref "raw type fields shouldn't be referenced by binders"
                 return none
               | .sepBy ..
               | .optional _ =>

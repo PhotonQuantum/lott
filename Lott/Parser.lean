@@ -49,8 +49,12 @@ declare_syntax_cat Lott.Symbol
 declare_syntax_cat Lott.Production
 declare_syntax_cat Lott.NonTerminal
 
+def rawTypeProdArgBody := leading_parser
+  leadingNode `Lott.RawTypeProdArg Parser.maxPrec <| "type(" >> termParser >> ")"
+
 def prodArg := leading_parser
-  Parser.optional (atomic (ident >> checkNoWsBefore "no space before ':'" >> ":")) >> syntaxParser argPrec
+  Parser.optional (atomic (ident >> checkNoWsBefore "no space before ':'" >> ":")) >>
+    (rawTypeProdArgBody <|> syntaxParser argPrec)
 
 def bindConfig :=
   " (" >> nonReservedSymbol "bind " >> ident >> optional (" in " >> sepBy1 ident ", ") >> ")"
