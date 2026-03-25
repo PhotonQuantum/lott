@@ -76,6 +76,8 @@ syntax "nosubst "? "nonterminal " atomic("(" parent " := " ident ") ")? (texPreP
 
 syntax Lott.NonTerminal : command
 
+syntax (name := attachSymbolsCmd) "attach_symbols " ident " := " Lott.Production* : command
+
 /- Judgement syntax. -/
 
 declare_syntax_cat Lott.Judgement

@@ -560,6 +560,52 @@ def Production.binders (prod : Production) : Array Name :=
   prod.bindConfig?.toArray.map fun { of, .. } => of.getId
 
 private
+def elabProduction (prod : Syntax) : CommandElabM (Production × Option Name × Array Ident) := do
+  let `(Production| | $[$ps]* : $name $[nosubst%$ns?]? $[notex%$nt?]? $[(bind $of? $[in $in??,*]?)]? $[(id $ids?,*)]? $[(expand := $expand?)]? $[(tex $[$texProfile?s]? := $tex?s)]*) := prod
+    | throwUnsupportedSyntax
+  let ids := ids?.getD (.mk #[]) |>.getElems
+
+  let ir ← ps.mapM IR.ofProdArg
+  let subst ← match ir with
+    | #[mk _ (.category n)] =>
+      if (metaVarExt.getState (← getEnv)).contains n then
+        pure <| if ns?.isNone then some n else none
+      else
+        if let some ns := ns? then
+          logWarningAt ns "unused nosubst; production is not a candidate for substitution"
+        pure none
+    | _ =>
+      if let some ns := ns? then
+        logWarningAt ns "unused nosubst; production is not a candidate for substitution"
+      pure none
+
+  let bindConfig? ← match of?, in?? with
+    | some of, some in? => do
+      let res := { of, in' := in?.getD (.mk #[]) : BindConfig }
+      if let some x := ids.find? (res.find? ·.getId |>.isSome) then
+        throwErrorAt x "name {x} also appears in bind config"
+      for name in toStream res do
+        if !containsName ir name.getId then
+          logWarningAt name "name not found in syntax"
+      pure <| some res
+    | none, none => pure none
+    | _, _ => unreachable!
+
+  let ids := ids.map TSyntax.getId
+
+  let (_, defaults) := texProfile?s.zip tex?s |>.partition fun (p?, _) => p?.isSome
+  if defaults.size > 1 then
+    throwUnsupportedSyntax
+  let profileTex := RBMap.fromArray (cmp := Name.quickCmp) <| texProfile?s.zip tex?s |>.map
+    fun (profile?, tex) => (profile?.map TSyntax.getId |>.getD default, tex)
+
+  return (
+    { name, ir, expand?, bindConfig?, ids, «notex» := nt?.isSome, profileTex },
+    subst,
+    texProfile?s.filterMap id
+  )
+
+private
 structure NonTerminal where
   canon : Ident
   aliases : Array (Ident × Bool × Option String)
@@ -681,50 +727,7 @@ def elabNonTerminals (nts : Array Syntax) : CommandElabM Unit := do
       nameNt?s.extract 1 nameNt?s.size |>.map Option.isSome |>.zip <|
       nameTex?s.extract 1 nameTex?s.size |>.map <| Option.map TSyntax.getString
 
-    let prodSubstAndProfiles ← prods.mapM fun prod => do
-      let `(Production| | $[$ps]* : $name $[nosubst%$ns?]? $[notex%$nt?]? $[(bind $of? $[in $in??,*]?)]? $[(id $ids?,*)]? $[(expand := $expand?)]? $[(tex $[$texProfile?s]? := $tex?s)]*) := prod
-        | throwUnsupportedSyntax
-      let ids := ids?.getD (.mk #[]) |>.getElems
-
-      let ir ← ps.mapM IR.ofProdArg
-      let subst ← match ir with
-        | #[mk _ (.category n)] =>
-          if (metaVarExt.getState (← getEnv)).contains n then
-            pure <| if ns?.isNone then some n else none
-          else
-            if let some ns := ns? then
-              logWarningAt ns "unused nosubst; production is not a candidate for substitution"
-            pure none
-        | _ =>
-          if let some ns := ns? then
-            logWarningAt ns "unused nosubst; production is not a candidate for substitution"
-          pure none
-
-      let bindConfig? ← match of?, in?? with
-        | some of, some in? => do
-          let res := { of, in' := in?.getD (.mk #[]) : BindConfig }
-          if let some x := ids.find? (res.find? ·.getId |>.isSome) then
-            throwErrorAt x "name {x} also appears in bind config"
-          for name in toStream res do
-            if !containsName ir name.getId then
-              logWarningAt name "name not found in syntax"
-          pure <| some res
-        | none, none => pure none
-        | _, _ => unreachable!
-
-      let ids := ids.map TSyntax.getId
-
-      let (_, defaults) := texProfile?s.zip tex?s |>.partition fun (p?, _) => p?.isSome
-      if defaults.size > 1 then
-        throwUnsupportedSyntax
-      let profileTex := RBMap.fromArray (cmp := Name.quickCmp) <| texProfile?s.zip tex?s |>.map
-        fun (profile?, tex) => (profile?.map TSyntax.getId |>.getD default, tex)
-
-      return (
-        { name, ir, expand?, bindConfig?, ids, «notex» := nt?.isSome, profileTex },
-        subst,
-        texProfile?s.filterMap id
-      )
+    let prodSubstAndProfiles ← prods.mapM elabProduction
 
     let (prods, substAndProfiles) := prodSubstAndProfiles.unzip
     let (substs, profiless) := substAndProfiles.unzip
@@ -1244,6 +1247,81 @@ def elabNonTerminals (nts : Array Syntax) : CommandElabM Unit := do
           return some s!"\\lottproduction\{{productionTex}}\n"
         let productionsTex := "\\lottproductionsep\n".intercalate productionTexs.toList
         return s!"\\lottnonterminal\{{canonTex}}\{\n{aliasesTex}}\{\n{productionsTex}}\n"
+
+private
+def elabAttachedSymbols (target : Ident) (prodStxs : Array Syntax) : CommandElabM Unit := do
+  let qualified ← resolveSymbol target (allowSuffix := false)
+  let currNs ← getCurrNamespace
+  let some canonName := qualified.erasePrefix? currNs
+    | throwErrorAt target
+        "attached symbol elaboration currently requires {target} to be in the current namespace"
+
+  let some { profiles, .. } := symbolExt.getState (← getEnv) |>.find? qualified
+    | throwErrorAt target "unknown nonterminal {target}"
+
+  let prods ← prodStxs.mapM fun prodStx => do
+    let (prod, _, texProfiles) ← elabProduction prodStx
+    let some _ := prod.expand?
+      | throwErrorAt prod.name "attached symbols must include an expand specifier"
+    for profile in texProfiles do
+      if !profiles.contains profile.getId then
+        throwErrorAt prod.name "unknown tex profile {profile} for {target}"
+    return prod
+
+  let catName := symbolPrefix ++ qualified
+  let attrIdent := mkIdent <| catName.appendAfter "_parser"
+  let catIdent := mkIdent catName
+
+  for prod@{ name, ir, ids, expand?, profileTex, .. } in prods do
+    let some expand := expand? | unreachable!
+    let (val, type) ← IR.toParser ir canonName symbolPrefix
+    let parserIdent := mkIdentFrom name <| canonName ++ name.getId.appendAfter "_attached_parser"
+    elabCommand <| ←
+      `(@[Lott.Symbol_parser, $attrIdent:ident]
+        private
+        def $parserIdent : $type := $val)
+
+    let patternArgs ← IR.toPatternArgs ir
+    let macroSeqItems ← IR.toMacroSeqItems ir canonName ids prod.binders
+    let macroName := mkIdentFrom name <| canonName ++ name.getId.appendAfter "AttachedImpl"
+    elabCommand <| ←
+      `(@[macro $symbolEmbedIdent]
+        private
+        def $macroName : Macro := fun stx => do
+          let Lean.Syntax.node _ ``Lott.symbolEmbed #[
+            Lean.Syntax.atom _ "[[",
+            Lean.Syntax.node _ $(quote catName) #[$patternArgs,*],
+            Lean.Syntax.atom _ "]]"
+          ] := stx | Macro.throwUnsupported
+          $macroSeqItems*
+          $expand:term)
+
+    if ← getTexOutputSome then
+      let texSeqItems ← IR.toTexSeqItems ir canonName
+      let profileAlternatives ← profileTex.toArray.filterMapM fun (profile, tex) => do
+        if profile == default then
+          return none
+        return some <| ← `(doSeqItem| if profile == $(quote profile) then return $tex)
+      let rest ← profileTex.find? default |>.getDM do
+        let joinArgs := IR.toJoinArgs ir
+        `(" ".intercalate [$joinArgs,*])
+
+      let texElabName := mkIdentFrom name <| canonName ++ name.getId.appendAfter "AttachedTexElab"
+      elabCommand <| ←
+        `(@[lott_tex_elab $catIdent]
+          private
+          def $texElabName : TexElab := fun profile ref stx => do
+            let Lean.Syntax.node _ $(quote catName) #[$patternArgs,*] := stx
+              | throwUnsupportedSyntax
+            $texSeqItems*
+            $profileAlternatives*
+            return $rest)
+
+@[command_elab attachSymbolsCmd]
+def elabAttachSymbolsCmd : CommandElab := fun stx => do
+  let `(attach_symbols $target:ident := $prods*) := stx
+    | throwUnsupportedSyntax
+  elabAttachedSymbols target prods
 
 elab_rules : command
   | `($nt:Lott.NonTerminal) => elabNonTerminals #[nt]

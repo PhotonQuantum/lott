@@ -7,6 +7,14 @@ nonterminal Term, e :=
   | "unit"       : unit
   | "wrap(" e ")" : wrap
 
+def Term.double (e: Term): Term :=
+  match e with
+  | .unit => .unit
+  | .wrap e => .wrap (.wrap e.double)
+
+attach_symbols Term :=
+  | "double(" e ")" : double (expand := return (← `(LottExamples.LeanEscape.Term.double $e)).raw)
+
 nonterminal Ty, τ :=
   | "Top" : top
 
@@ -25,6 +33,7 @@ example : [[unit : [[lean% Ty.top]]]] := by
 
 example : wrappedUnit = Term.wrap Term.unit := rfl
 example : trivialEnv = Env.mk (fun _ => Term.unit) := rfl
+example : [[double(wrap(unit))]] = [[wrap(wrap(unit))]] := by simp [Term.double]
 
 nonterminal MyList, ρ :=
   | "mk " type(List Term) : «mk»
