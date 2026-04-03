@@ -1,4 +1,4 @@
-import Lott.Data.Substring
+import Lott.Data.Slice
 
 namespace String
 
@@ -64,6 +64,6 @@ def makeEscape (s : String) : String := Id.run do
     res := res.push c
   res
 
-def dropPrefixes (s pre : String) : Substring.Raw := s.toRawSubstring.dropPrefixes pre.toRawSubstring
+def dropPrefixes (s pre : String) : String.Slice := s.toSlice.dropPrefixes pre.toSlice
 
 end String

@@ -74,7 +74,7 @@ elab_rules : command
         mkAbsolute outputName.getString
       else
         let some outputName := outputName?.map TSyntax.getString |>.orElse
-          fun () => inputName.getString.dropSuffix? ".lotttmpl" |>.map Substring.toString
+          fun () => inputName.getString.dropSuffix? ".lotttmpl" |>.map String.Slice.toString
           | throwErrorAt inputName
               "#filter input name must end with '.lotttmpl' if output name is omitted"
 
