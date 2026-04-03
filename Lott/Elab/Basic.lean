@@ -33,7 +33,7 @@ def writeMakeDeps (filePath : FilePath) (extraDeps : List FilePath := []) : Comm
   if !(← getOptions).get lott.tex.output.makeDeps.name lott.tex.output.makeDeps.defValue then
     return
 
-  let sp ← liftIO <| initSrcSearchPath
+  let sp ← liftIO <| Lean.searchPathRef.get
   let depPaths ← (← getEnv).allImportedModuleNames.mapM (findLean sp ·)
   let deps := " ".intercalate <| (depPaths.toList ++ extraDeps).map
     (·.toString.dropPrefixes "./" |>.toString)
@@ -421,7 +421,7 @@ def _root_.Lott.IR.toMacroSeqItems (ir : Array IR) (canon : Name) (ids binders :
                 return (false, ← Lean.Syntax.mkMap (.mk collection) (.mk pat) (.mk symbol) mapName)
               | Lean.Syntax.node _ $(quote catName) #[
                   lhs@(Lean.Syntax.node _ $(quote catName) _),
-                  Lean.Syntax.atom _ $(quote sep.trim),
+                  Lean.Syntax.atom _ $(quote sep.trimAscii.toString),
                   rhs@(Lean.Syntax.node _ $(quote catName) _)
                 ] => do
                 let (lhsSingleton, lhs) ← $go:ident lhs
@@ -529,7 +529,7 @@ def _root_.Lott.IR.toTexSeqItems (ir : Array IR) (canon : Name)
                 return s!"\\lottsepbycomprehensionpatcollection\{{symbolTex}}\{{patTex}}\{{collectionTex}}"
               | Lean.Syntax.node _ $(quote catName) #[
                   lhs@(Lean.Syntax.node _ $(quote catName) _),
-                  Lean.Syntax.atom _ $(quote sep.trim),
+                  Lean.Syntax.atom _ $(quote sep.trimAscii.toString),
                   rhs@(Lean.Syntax.node _ $(quote catName) _)
                 ] => do
                 let lhsTex ← $go:ident lhs
@@ -581,12 +581,13 @@ def _root_.Lott.IR.toTexSeqItems (ir : Array IR) (canon : Name)
           | none => pure "")
 where
   atomToTex (atom : String) :=
-    let leadingWs := atom.data[0]?.map Char.isWhitespace |>.getD false
-    let trailingWs := atom.data.getLast?.map Char.isWhitespace |>.getD false
-    let tex := if atom.trim.data.all (fun c => c.isAlpha || c.isSubscriptAlpha) then
-        s!"\\lottkw\{{atom.trim.texEscape}}"
+    let atomTrimmed := atom.trimAscii.toString
+    let leadingWs := atom.toList[0]?.map Char.isWhitespace |>.getD false
+    let trailingWs := atom.toList.getLast?.map Char.isWhitespace |>.getD false
+    let tex := if atomTrimmed.toList.all (fun c => c.isAlpha || c.isSubscriptAlpha) then
+        s!"\\lottkw\{{atomTrimmed.texEscape}}"
       else
-        s!"\\lottsym\{{atom.trim.texEscape}}"
+        s!"\\lottsym\{{atomTrimmed.texEscape}}"
     (if leadingWs then "\\, " else "") ++ tex ++ (if trailingWs then " \\," else "")
 
 partial
@@ -614,34 +615,24 @@ def toExampleSyntax (ir : Array IR) (canonQualified profile : Name) (enclosingSe
         sepByIdxStrings.foldl (init := mkNode (variablePrefix ++ n) #[l]) (stop := enclosingSepBys)
           (mkNode (variablePrefix ++ n) #[·, mkAtom "@", mkIdent <| .str .anonymous ·])
       ]
-    | .atom s => return if s == "" then none else mkAtom s.trim
+    | .atom s => return if s == "" then none else mkAtom s.trimAscii.toString
     | .rawType _ =>
       return some <| mkEscapeSyntax rawTypeFieldCat (mkIdent `t)
     | .sepBy ir _ => do
       let catName := sepByPrefix ++ canonQualified ++ l.getId |>.obfuscateMacroScopes
       let some patString := sepByIdxStrings[enclosingSepBys]?
         | throwError "encountered too many nested sepBys; ran out of index names"
-      let collectionString := "[:n]"
+      let patIdent := mkIdent <| .str .anonymous patString
+      let collection ← `(term| [:n])
       return mkNullNode #[
         mkNode catName #[
           mkAtom "</",
           mkNode catName <| ← toExampleSyntax ir canonQualified profile enclosingSepBys.succ,
           mkAtom "//",
           mkNullNode,
-          .ident (.original ⟨patString, 0, 0⟩ 0 ⟨patString, ⟨1⟩, ⟨1⟩⟩ ⟨1⟩)
-            patString.toSubstring `i [],
+          patIdent,
           mkAtom "in",
-          .node (.original ⟨collectionString, ⟨0⟩, ⟨0⟩⟩ ⟨0⟩ ⟨collectionString, ⟨4⟩, ⟨4⟩⟩ ⟨4⟩)
-            ``Std.Range.«term[:_]» #[
-              .atom (.original ⟨collectionString, ⟨0⟩, ⟨0⟩⟩ ⟨0⟩ ⟨collectionString, ⟨1⟩, ⟨1⟩⟩ ⟨1⟩)
-                "[",
-              .atom (.original ⟨collectionString, ⟨1⟩, ⟨1⟩⟩ ⟨1⟩ ⟨collectionString, ⟨2⟩, ⟨2⟩⟩ ⟨2⟩)
-                ":",
-              .ident (.original ⟨collectionString, ⟨2⟩, ⟨2⟩⟩ ⟨2⟩ ⟨collectionString, ⟨3⟩, ⟨3⟩⟩ ⟨3⟩)
-                ⟨collectionString, ⟨2⟩, ⟨3⟩⟩ `n [],
-              .atom (.original ⟨collectionString, ⟨3⟩, ⟨3⟩⟩ ⟨3⟩ ⟨collectionString, ⟨4⟩, ⟨4⟩⟩ ⟨4⟩)
-                "]"
-          ],
+          collection,
           mkNullNode <| Option.someIf (mkAtom "notex") «notex» |>.toArray,
           mkAtom "/>"
         ]
@@ -649,14 +640,14 @@ def toExampleSyntax (ir : Array IR) (canonQualified profile : Name) (enclosingSe
     | .optional ir => do
       let catName := optionalPrefix ++ canonQualified ++ l.getId |>.obfuscateMacroScopes
       let condString := "b"
+      let condIdent := mkIdent <| .str .anonymous condString
       return mkNullNode #[
         mkNode catName #[
           mkAtom "</",
           mkNode catName <| ← toExampleSyntax ir canonQualified profile enclosingSepBys,
           mkAtom "//",
           mkNullNode,
-          .ident (.original ⟨condString, 0, 0⟩ 0 ⟨condString, ⟨1⟩, ⟨1⟩⟩ ⟨1⟩)
-            condString.toSubstring `b [],
+          condIdent,
           mkNullNode <| Option.someIf (mkAtom "notex") «notex» |>.toArray,
           mkAtom "/>"
         ]

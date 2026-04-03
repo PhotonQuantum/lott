@@ -26,7 +26,7 @@ initialize aliasExt : PersistentEnvExtension Alias Alias AliasState ←
   addImportedFn := fun aliasss => return {
     byAlias :=
       aliasss.flatten.foldl (init := .empty) fun acc a => acc.upsert a.alias.toString fun _ => a
-    allCanon := aliasss.flatten.map (·.canon) |> RBTree.fromArray (cmp := Name.quickCmp)
+    allCanon := NameSet.ofArray <| aliasss.flatten.map (·.canon)
   }
   addEntryFn := fun { byAlias, allCanon } a => {
     byAlias := byAlias.insert a.alias.toString a
@@ -59,7 +59,7 @@ initialize symbolExt : PersistentEnvExtension Symbol Symbol SymbolState ←
   addImportedFn := fun symss =>
     return symss.flatten.foldl (init := mkNameMap _) fun acc sym => acc.insert sym.qualified sym
   addEntryFn := fun st sym => st.insert sym.qualified sym
-  exportEntriesFn := RBMap.fold (cmp := Name.quickCmp) (init := #[]) fun acc _ sym => acc.push sym
+  exportEntriesFn := fun st => st.foldl (fun acc _ sym => acc.push sym) #[]
 }
 
 structure Judgement where
@@ -78,14 +78,14 @@ initialize judgementExt : PersistentEnvExtension Judgement Judgement JudgementSt
   mkInitial := return default
   addImportedFn := fun jds => return {
     byName := jds.flatten.foldl (init := mkNameMap _) fun acc jd => acc.insert jd.name jd
-    all := jds.flatten.map (·.name) |> RBTree.fromArray (cmp := Name.quickCmp)
+    all := NameSet.ofArray <| jds.flatten.map (·.name)
   }
   addEntryFn := fun { byName, all } jd => {
     byName := byName.insert jd.name jd
     all := all.insert jd.name
   }
   exportEntriesFn := fun { byName, .. } =>
-    byName.fold (cmp := Name.quickCmp) (init := #[]) fun acc _ jd => acc.push jd
+    byName.foldl (fun acc _ jd => acc.push jd) #[]
 }
 
 structure Child where
@@ -99,7 +99,7 @@ initialize childExt : PersistentEnvExtension Child Child ChildState ← register
   addImportedFn := fun children =>
     return children.flatten.foldl (init := mkNameMap _) fun acc child => acc.insert child.canon child
   addEntryFn := fun st child => st.insert child.canon child
-  exportEntriesFn := RBMap.fold (cmp := Name.quickCmp) (init := #[]) fun acc _ child => acc.push child
+  exportEntriesFn := fun st => st.foldl (fun acc _ child => acc.push child) #[]
 }
 
 end Lott

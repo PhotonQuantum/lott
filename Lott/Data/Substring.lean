@@ -1,8 +1,8 @@
 partial
-def Substring.dropPrefixes (s pre : Substring) : Substring :=
+def Substring.Raw.dropPrefixes (s pre : Substring.Raw) : Substring.Raw :=
   if pre.bsize = 0 then
     s
   else
     match s.dropPrefix? pre with
-    | some s' => s'.dropPrefixes pre
+    | some s' => Substring.Raw.dropPrefixes s' pre
     | none => s
